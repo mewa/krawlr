@@ -20,7 +20,8 @@ type kReq struct {
 type Krawlr struct {
 	links map[string]*LinkSet
 
-	client *http.Client
+	client      *http.Client
+	concurrency int
 
 	urlsC chan kReq
 
@@ -28,7 +29,7 @@ type Krawlr struct {
 	mu *sync.Mutex
 }
 
-func New() *Krawlr {
+func New(concurrency int) *Krawlr {
 	client := &http.Client{
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
@@ -38,7 +39,8 @@ func New() *Krawlr {
 	return &Krawlr{
 		links: map[string]*LinkSet{},
 
-		client: client,
+		client:      client,
+		concurrency: concurrency,
 
 		urlsC: make(chan kReq, 100),
 
@@ -54,20 +56,23 @@ func (kr *Krawlr) Crawl(addr string) (map[string]*LinkSet, error) {
 
 	log.WithField("root", u).WithField("url", addr).Println("scraping")
 
-	go func() {
-		for {
-			select {
-			case req := <-kr.urlsC:
-				go func() {
-					kr.crawl(req.root, req.link)
-					kr.wg.Done()
-				}()
-			}
-		}
-	}()
+	for i := 0; i < kr.concurrency; i++ {
+		go func(kr *Krawlr) {
+			for {
+				select {
+				case req := <-kr.urlsC:
+					err := kr.crawl(req.root, req.link)
+					if err != nil {
+						log.WithError(err).Println("error scraping")
+					}
 
-	kr.wg.Add(1)
-	kr.urlsC <- kReq{u, u}
+					kr.wg.Done()
+				}
+			}
+		}(kr)
+	}
+
+	kr.enqueue(kReq{u, u})
 
 	kr.wg.Wait()
 
@@ -105,8 +110,7 @@ func (kr *Krawlr) crawl(root, addr *url.URL) error {
 					WithField("location", locUrl).
 					Println("following redirect")
 
-				kr.wg.Add(1)
-				kr.urlsC <- kReq{root, locUrl}
+				kr.enqueue(kReq{root, locUrl})
 			}
 		}
 		return nil
@@ -168,8 +172,7 @@ func (kr *Krawlr) analyse(root, link *url.URL) error {
 		if link.Host == root.Host {
 			log.WithField("root", root).WithField("url", link).Println("scraping")
 
-			kr.wg.Add(1)
-			kr.urlsC <- kReq{link, link}
+			kr.enqueue(kReq{link, link})
 		}
 	}
 
@@ -195,6 +198,13 @@ func (kr *Krawlr) visitLink(root, link *url.URL) bool {
 	(*set)[link.String()] = true
 
 	return crawled
+}
+
+func (kr *Krawlr) enqueue(req kReq) {
+	kr.wg.Add(1)
+	go func() {
+		kr.urlsC <- req
+	}()
 }
 
 func (ls *LinkSet) String() string {
