@@ -6,7 +6,7 @@ import (
 )
 
 func Test_Krawl_Basic(t *testing.T) {
-	k := New()
+	k := New(100)
 
 	results, err := k.Crawl("http://localhost:8888/")
 
@@ -27,7 +27,7 @@ func Test_Krawl_Basic(t *testing.T) {
 }
 
 func Test_Krawl_Subpages(t *testing.T) {
-	k := New()
+	k := New(100)
 
 	results, err := k.Crawl("http://localhost:8888/")
 
