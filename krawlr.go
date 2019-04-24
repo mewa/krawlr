@@ -63,6 +63,7 @@ func (kr *Krawlr) crawl(root, addr *url.URL) error {
 		location := r.Header.Get("Location")
 		locUrl, _ := url.Parse(location)
 
+		locUrl = absUrl(root, locUrl)
 		crawled := kr.visitLink(root, locUrl)
 
 		log.
@@ -72,6 +73,11 @@ func (kr *Krawlr) crawl(root, addr *url.URL) error {
 
 		if !crawled {
 			if locUrl.Host == root.Host {
+				log.
+					WithField("url", addr).
+					WithField("location", locUrl).
+					Println("following redirect")
+
 				return kr.crawl(root, locUrl)
 			}
 		}
