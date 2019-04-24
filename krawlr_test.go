@@ -10,8 +10,8 @@ func Test_Basic(t *testing.T) {
 
 	results, err := k.Crawl("http://localhost:8888")
 
-	expected := map[string]LinkSet{
-		"http://localhost:8888": LinkSet{
+	expected := map[string]*LinkSet{
+		"http://localhost:8888": &LinkSet{
 			"https://google.com":    true,
 			"https://wikipedia.org": true,
 		},
