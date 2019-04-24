@@ -7,16 +7,25 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sync"
 )
 
 type LinkSet map[string]bool
+
+type kReq struct {
+	root *url.URL
+	link *url.URL
+}
 
 type Krawlr struct {
 	links map[string]*LinkSet
 
 	client *http.Client
 
-	urlsC chan *url.URL
+	urlsC chan kReq
+
+	wg sync.WaitGroup
+	mu *sync.Mutex
 }
 
 func New() *Krawlr {
@@ -31,7 +40,9 @@ func New() *Krawlr {
 
 		client: client,
 
-		urlsC: make(chan *url.URL),
+		urlsC: make(chan kReq, 100),
+
+		mu: new(sync.Mutex),
 	}
 }
 
@@ -43,7 +54,23 @@ func (kr *Krawlr) Crawl(addr string) (map[string]*LinkSet, error) {
 
 	log.WithField("root", u).WithField("url", addr).Println("scraping")
 
-	err = kr.crawl(u, u)
+	go func() {
+		for {
+			select {
+			case req := <-kr.urlsC:
+				go func() {
+					kr.crawl(req.root, req.link)
+					kr.wg.Done()
+				}()
+			}
+		}
+	}()
+
+	kr.wg.Add(1)
+	kr.urlsC <- kReq{u, u}
+
+	kr.wg.Wait()
+
 	return kr.links, err
 }
 
@@ -78,7 +105,8 @@ func (kr *Krawlr) crawl(root, addr *url.URL) error {
 					WithField("location", locUrl).
 					Println("following redirect")
 
-				return kr.crawl(root, locUrl)
+				kr.wg.Add(1)
+				kr.urlsC <- kReq{root, locUrl}
 			}
 		}
 		return nil
@@ -140,10 +168,8 @@ func (kr *Krawlr) analyse(root, link *url.URL) error {
 		if link.Host == root.Host {
 			log.WithField("root", root).WithField("url", link).Println("scraping")
 
-			err := kr.crawl(link, link)
-			if err != nil {
-				log.WithError(err).Error("error crawling")
-			}
+			kr.wg.Add(1)
+			kr.urlsC <- kReq{link, link}
 		}
 	}
 
@@ -153,6 +179,9 @@ func (kr *Krawlr) analyse(root, link *url.URL) error {
 // marks link as visited on page root and returns whether it had been
 // visited previously
 func (kr *Krawlr) visitLink(root, link *url.URL) bool {
+	kr.mu.Lock()
+	defer kr.mu.Unlock()
+
 	rootStr := root.String()
 	set, ok := kr.links[rootStr]
 
