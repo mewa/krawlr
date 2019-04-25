@@ -7,7 +7,7 @@ import (
 )
 
 func main() {
-	k := krawlr.New(10000)
+	k := krawlr.New(1000)
 
 	res, _ := k.Crawl(os.Args[1])
 	for page, links := range res {

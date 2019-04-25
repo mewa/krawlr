@@ -57,7 +57,7 @@ func (kr *Krawlr) Crawl(addr string) (map[string]*LinkSet, error) {
 	log.WithField("root", u).WithField("url", addr).Println("scraping")
 
 	for i := 0; i < kr.concurrency; i++ {
-		go func(kr *Krawlr) {
+		go func() {
 			for {
 				select {
 				case req := <-kr.urlsC:
@@ -69,11 +69,10 @@ func (kr *Krawlr) Crawl(addr string) (map[string]*LinkSet, error) {
 					kr.wg.Done()
 				}
 			}
-		}(kr)
+		}()
 	}
 
 	kr.enqueue(kReq{u, u})
-
 	kr.wg.Wait()
 
 	return kr.links, err
@@ -91,6 +90,7 @@ func (kr *Krawlr) crawl(root, addr *url.URL) error {
 	defer r.Body.Close()
 
 	switch r.StatusCode {
+
 	case 301, 302:
 		location := r.Header.Get("Location")
 		locUrl, _ := url.Parse(location)
@@ -114,7 +114,9 @@ func (kr *Krawlr) crawl(root, addr *url.URL) error {
 			}
 		}
 		return nil
+
 	case 404:
+
 	default:
 		return kr.scrape(root, r.Body)
 	}
@@ -167,7 +169,6 @@ func (kr *Krawlr) analyse(root, link *url.URL) error {
 	}
 
 	crawled := kr.visitLink(root, link)
-
 	if !crawled {
 		if link.Host == root.Host {
 			log.WithField("root", root).WithField("url", link).Println("scraping")
